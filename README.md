@@ -141,12 +141,6 @@ BTC Price = Global Wealth ÷ 21 Million BTC
 
 This calculator is for educational and entertainment purposes only. It represents a theoretical thought experiment and should not be considered financial advice. Real-world hyperbitcoinization would involve complex economic dynamics not modeled here.
 
-## 🤝 Contributing
-
-Feel free to contribute improvements to the calculator:
-- Enhanced wealth distribution models
-- Additional data sources
-- Visualization improvements
 - Bug fixes and optimizations
 
 ---
