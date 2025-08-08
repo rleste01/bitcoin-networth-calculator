@@ -13,63 +13,59 @@ Data Sources:
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import requests
 from typing import Dict
 
 class BitcoinWealthCalculator:
     def __init__(self):
-        # Global wealth from UBS Global Wealth Report 2024
+        # Global wealth data (UBS Global Wealth Report 2024)
         self.global_wealth = 449.9e12  # $449.9 trillion
         self.global_adults = 3.767e9   # 3.767 billion adults
         self.bitcoin_supply = 21e6     # 21 million BTC
-        self.btc_price_global = self.global_wealth / self.bitcoin_supply
         
         # US demographics and wealth
-        self.us_adults = 260e6         # ~260 million adults (est.)
+        self.us_adults = 260e6         # ~260 million adults
         self.us_population_share = self.us_adults / self.global_adults  # ~6.9%
-        self.us_wealth_share = 0.30    # US has 30% of wealth with 6.9% of population
+        self.us_wealth_share = 0.30    # 30% of global wealth
         self.us_wealth = self.global_wealth * self.us_wealth_share  # ~$135T
         self.us_bitcoin_share = self.bitcoin_supply * self.us_wealth_share  # ~6.3M BTC
-        self.btc_price_us = self.us_wealth / self.us_bitcoin_share  # Same as global price
         
-        # Global wealth distribution (UBS 2024 - actual data)
-        # Based on wealth pyramid: 3.767B adults, $449.9T total
+        # Bitcoin prices
+        self.btc_price_global = self.global_wealth / self.bitcoin_supply
+        self.btc_price_us = self.us_wealth / self.us_bitcoin_share
+        
+        # Wealth distribution data
         self.global_percentiles = {
-            0: -5000,       # Bottom
-            10: 1500,       # Within <$10k band
-            20: 3500,
-            30: 6000,
-            39.5: 10000,    # UBS boundary: bottom 39.5%
-            50: 25000,      # Estimated median
-            60: 40000,
-            70: 60000,
-            80: 85000,
-            82.2: 100000,   # UBS boundary: bottom 82.2%
-            90: 200000,
-            95: 500000,
-            98.5: 1000000,  # UBS boundary: top 1.5%
-            99: 1500000,
-            99.5: 5000000,
-            99.9: 25000000,
-            100: 100000000
+            0: -5000, 10: 1500, 20: 3500, 30: 6000, 39.5: 10000, 50: 25000,
+            60: 40000, 70: 60000, 80: 85000, 82.2: 100000, 90: 200000,
+            95: 500000, 98.5: 1000000, 99: 1500000, 99.5: 5000000,
+            99.9: 25000000, 100: 100000000
         }
         
-        # US wealth distribution (Federal Reserve SCF)
         self.us_percentiles = {
-            0: -10000,
-            10: 0,
-            25: 15000,
-            50: 121000,     # US median
-            75: 403000,
-            90: 1200000,
-            95: 2400000,
-            99: 11100000,
-            99.5: 21000000,
-            99.9: 43200000,
-            100: 500000000
+            0: -10000, 10: 0, 25: 15000, 50: 121000, 75: 403000,
+            90: 1200000, 95: 2400000, 99: 11100000, 99.5: 21000000,
+            99.9: 43200000, 100: 500000000
         }
         
-        # Current mode
+        # State
         self.use_global = True
+        self.current_btc_price = self.get_current_bitcoin_price()
+    
+    def get_current_bitcoin_price(self) -> float:
+        """Fetch current Bitcoin price from CoinGecko API"""
+        try:
+            response = requests.get(
+                'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
+                timeout=5
+            )
+            if response.status_code == 200:
+                return response.json()['bitcoin']['usd']
+        except Exception as e:
+            print(f"⚠️  Error fetching Bitcoin price: {e}")
+        
+        print("Using fallback Bitcoin price: $50,000")
+        return 50000.0
     
     def get_percentiles(self):
         """Get current percentile dictionary"""
@@ -124,15 +120,13 @@ class BitcoinWealthCalculator:
             supply_percentage = (bitcoin_needed / self.bitcoin_supply) * 100
             wealth_base = self.global_wealth
             btc_supply = self.bitcoin_supply
-            btc_price = self.btc_price_global
         else:
-            # US mode: compete only for US share (~6.3M BTC) within US wealth (~$135T)
+            # US mode: compete for US allocation of 6.3M BTC
             bitcoin_needed = net_worth / self.btc_price_us
             wealth_fraction = (net_worth / self.us_wealth) * 100
             supply_percentage = (bitcoin_needed / self.us_bitcoin_share) * 100
             wealth_base = self.us_wealth
             btc_supply = self.us_bitcoin_share
-            btc_price = self.btc_price_us
         
         return {
             'net_worth': net_worth,
@@ -142,7 +136,6 @@ class BitcoinWealthCalculator:
             'supply_percentage': supply_percentage,
             'wealth_base': wealth_base,
             'btc_supply': btc_supply,
-            'btc_price': btc_price,
             'data_source': 'Global (UBS 2024)' if self.use_global else 'US (Fed SCF)'
         }
     
@@ -162,18 +155,15 @@ class BitcoinWealthCalculator:
             return f"{pct:.8f}%"
     
     def generate_table(self) -> pd.DataFrame:
-        """Generate percentile table"""
-        if self.use_global:
-            percentiles = [1, 5, 10, 25, 39.5, 50, 75, 82.2, 90, 95, 98.5, 99, 99.5, 99.9]
-            source = "Global"
-        else:
-            percentiles = [1, 5, 10, 25, 50, 75, 90, 95, 99, 99.5, 99.9]
-            source = "US"
+        """Generate percentile table with standardized percentiles"""
+        percentiles = [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 99.9]
+        source = "Global" if self.use_global else "US"
         
         results = []
         for pct in percentiles:
             wealth = self.get_wealth_from_percentile(pct)
             calc = self.calculate_bitcoin_needed(wealth)
+            current_cost = calc['bitcoin_needed'] * self.current_btc_price
             
             if self.use_global:
                 supply_label = '% of Total Supply (21M)'
@@ -184,6 +174,7 @@ class BitcoinWealthCalculator:
                 f'{source} Percentile': f"{pct}%",
                 'Net Worth Threshold': f"${wealth:,.0f}",
                 'Bitcoin Needed': f"{calc['bitcoin_needed']:.8f}",
+                'Current Cost': f"${current_cost:,.2f}",
                 supply_label: self.format_percentage(calc['supply_percentage'])
             })
         
@@ -225,36 +216,33 @@ class BitcoinWealthCalculator:
     def switch_to_global(self):
         """Switch to global wealth data"""
         self.use_global = True
-        print("\n✓ Switched to GLOBAL wealth distribution (UBS 2024)")
-        print("Data: UBS Global Wealth Report 2024")
-        print("Sample: 3.767 billion adults, $449.9 trillion")
-        print("Bitcoin allocation: Compete for full 21M BTC supply")
-        print("Key thresholds: Top 1.5%: $1M+ | Top 17.8%: $100K+ | Median: ~$25K\n")
+        print("\n✓ Switched to GLOBAL wealth distribution")
+        print(f"Population: {self.global_adults/1e9:.1f}B adults worldwide")
+        print(f"Wealth: ${self.global_wealth/1e12:.1f}T total")
+        print("Bitcoin: Compete for full 21M BTC supply")
+        print("Thresholds: Top 1.5%: $1M+ | Top 17.8%: $100K+ | Median: ~$25K\n")
     
     def switch_to_us(self):
         """Switch to US wealth data"""
         self.use_global = False
-        print("\n✓ Switched to US wealth distribution (Federal Reserve)")
-        print("Data: Survey of Consumer Finances")
-        print(f"US wealth: ${self.us_wealth/1e12:.1f}T ({self.us_wealth_share:.0%} of global)")
-        print(f"Bitcoin allocation: Compete for {self.us_bitcoin_share/1e6:.1f}M BTC ({self.us_wealth_share:.0%} of supply)")
-        print("Key thresholds: Top 1%: $11.1M+ | Top 10%: $1.2M+ | Median: $121K\n")
+        print("\n✓ Switched to US wealth distribution")
+        print(f"Population: {self.us_adults/1e6:.0f}M adults ({self.us_population_share:.1%} of global)")
+        print(f"Wealth: ${self.us_wealth/1e12:.1f}T ({self.us_wealth_share:.0%} of global)")
+        print(f"Bitcoin: Compete for {self.us_bitcoin_share/1e6:.1f}M BTC allocation")
+        print("Thresholds: Top 1%: $11.1M+ | Top 10%: $1.2M+ | Median: $121K\n")
     
     def print_header(self):
         """Print calculator header"""
         print("=== Bitcoin World Wealth Percentile Calculator ===\n")
         print(f"Global: {self.global_adults/1e9:.1f}B adults, ${self.global_wealth/1e12:.1f}T wealth")
         print(f"US: {self.us_adults/1e6:.0f}M adults ({self.us_population_share:.1%}), ${self.us_wealth/1e12:.1f}T wealth ({self.us_wealth_share:.0%})")
-        print(f"Total Bitcoin: {self.bitcoin_supply/1e6:.0f}M BTC")
-        print(f"US Bitcoin allocation: {self.us_bitcoin_share/1e6:.1f}M BTC ({self.us_wealth_share:.0%})")
+        print(f"Bitcoin Supply: {self.bitcoin_supply/1e6:.0f}M total | US allocation: {self.us_bitcoin_share/1e6:.1f}M")
         print(f"BTC Price (hyperbitcoinization): ${self.btc_price_global:,.0f}")
-        print("\nCommands:")
-        print("  [number] - Calculate Bitcoin needed for net worth")
-        print("  'global' - Switch to global data (compete for 21M BTC)")
-        print("  'us'     - Switch to US data (compete for 6.3M BTC)")
-        print("  'table'  - Show percentile table")
-        print("  'plot'   - Show visualization")
-        print("  'quit'   - Exit\n")
+        
+        if self.current_btc_price:
+            print(f"Current BTC Price: ${self.current_btc_price:,.0f}")
+        
+        print("\nCommands: [number] | 'global' | 'us' | 'table' | 'plot' | 'quit'\n")
 
 def main():
     calculator = BitcoinWealthCalculator()
@@ -276,7 +264,7 @@ def main():
             
             elif user_input.lower() == 'table':
                 source = "Global" if calculator.use_global else "US"
-                print(f"\n=== Bitcoin Needed by {source} Percentile ===")
+                print(f"\n=== Bitcoin Requirements by {source} Percentile ===")
                 table = calculator.generate_table()
                 print(table.to_string(index=False))
                 print()
@@ -289,17 +277,21 @@ def main():
                 net_worth = float(user_input.replace('$', '').replace(',', ''))
                 result = calculator.calculate_bitcoin_needed(net_worth)
                 
+                # Calculate current cost
+                current_cost = result['bitcoin_needed'] * calculator.current_btc_price
+                
                 source = "Global" if calculator.use_global else "US"
                 print(f"\n=== Results for ${net_worth:,.0f} ({result['data_source']}) ===")
                 print(f"{source} percentile: {result['percentile']:.2f}%")
                 print(f"Bitcoin needed: {result['bitcoin_needed']:.8f} BTC")
+                print(f"Current cost: ${current_cost:,.2f}")
                 
                 if calculator.use_global:
-                    print(f"% of total Bitcoin supply (21M): {calculator.format_percentage(result['supply_percentage'])}")
+                    print(f"% of total supply (21M): {calculator.format_percentage(result['supply_percentage'])}")
                     print(f"% of global wealth: {result['wealth_fraction']:.8f}%")
                 else:
-                    print(f"% of US Bitcoin allocation (6.3M): {calculator.format_percentage(result['supply_percentage'])}")
-                    print(f"% of total Bitcoin supply (21M): {calculator.format_percentage((result['bitcoin_needed']/calculator.bitcoin_supply)*100)}")
+                    print(f"% of US allocation (6.3M): {calculator.format_percentage(result['supply_percentage'])}")
+                    print(f"% of total supply (21M): {calculator.format_percentage((result['bitcoin_needed']/calculator.bitcoin_supply)*100)}")
                     print(f"% of US wealth: {result['wealth_fraction']:.8f}%")
                     print(f"% of global wealth: {((result['bitcoin_needed']*calculator.btc_price_global)/calculator.global_wealth)*100:.8f}%")
                 print()
