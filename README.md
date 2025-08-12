@@ -176,7 +176,7 @@ Both modes now use consistent percentiles for easy comparison:
 - Doesn't account for Bitcoin lost/inaccessible (~20% estimated)
 - Theoretical scenario for educational purposes
 - Real hyperbitcoinization would have different dynamics
-- API dependency for current pricing (fallback: $50,000)
+- API dependency for current pricing (fallback: $115,000)
 
 ## 📚 References
 
